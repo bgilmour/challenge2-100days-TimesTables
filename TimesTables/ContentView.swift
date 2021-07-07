@@ -15,9 +15,9 @@ struct ContentView: View {
         ("20", 20),
         ("all", 0)
     ]
-    var selectedTables = [Int]()
 
     @State private var gameSetup = true
+    @State private var gameRunning = false
     @State private var questionChoice = 0
     @State private var tableSelections = [
         false, false, false, false,
@@ -30,12 +30,12 @@ struct ContentView: View {
             displayBackground
 
             Group {
-                VStack(spacing: 20) {
+                VStack(spacing: 15) {
                     if gameSetup {
                         Group {
-                            displayInstructions
-
                             displayTimesTableButtons
+
+                            Spacer()
 
                             displayQuestionSelection
 
@@ -43,32 +43,18 @@ struct ContentView: View {
 
                             displayStartButton
                         }
-                        .transition(AnyTransition.scale.animation(.linear(duration: 1)))
+                        .transition(AnyTransition.scale.animation(.linear(duration: 0.5)))
                     } else {
                         Group {
                             Spacer()
 
-                            ScrollView {
-                                ForEach(0 ..< tableSelections.count) {
-                                    Text("table[\($0 + 1)]: \(tableSelections[$0] ? "selected" : "unselected")")
-                                        .font(.title2)
-                                        .fontWeight(.bold)
-                                        .foregroundColor(tableSelections[$0] ? .green : .white)
-                                        .listRowBackground(Color.clear)
-                                }
-                            }
-                            .padding(.vertical, 10)
-                            .padding(.horizontal, 15)
-                            .timesTableGroupBorderStyle()
-                            .onAppear(perform: {
-                                initialiseGame()
-                            })
+                            displayGamePlay
 
                             Spacer()
 
                             displayRestartButton
                         }
-                        .transition(AnyTransition.scale.animation(.linear(duration: 1)))
+                        .transition(AnyTransition.scale.animation(.linear(duration: 0.5)))
                     }
                 }
                 .padding(10)
@@ -84,20 +70,20 @@ struct ContentView: View {
         .edgesIgnoringSafeArea(.all)
     }
 
-    var displayInstructions: some View {
-        TimesTableText("Pick some times tables")
-            .timesTableGroupBorderStyle()
-    }
-
     var displayTimesTableButtons: some View {
-        GridStack(rows: 3, columns: 4) { row, col in
-            let index = row * 4 + col
+        VStack {
+            TimesTableText("Pick some times tables")
 
-            TimesTableToggle(index: index, color: colors[index % 7], selected: $tableSelections[index]) {
-                // do nothing
+            GridStack(rows: 3, columns: 4) { row, col in
+                let index = row * 4 + col
+
+                TimesTableToggle(index: index, color: colors[index % 7], selected: $tableSelections[index]) {
+                    // do nothing
+                }
             }
+            .padding(.horizontal, 10)
+            .padding(.bottom, 15)
         }
-        .padding(10)
         .timesTableGroupBorderStyle()
     }
 
@@ -112,34 +98,86 @@ struct ContentView: View {
             }
             .pickerStyle(SegmentedPickerStyle())
             .colorMultiply(.purple).colorInvert()
-            .padding(.bottom, 10)
             .padding(.horizontal, 15)
+            .padding(.top, -5)
+            .padding(.bottom, 15)
         }
         .timesTableGroupBorderStyle()
+    }
+
+    var displayGamePlay: some View {
+        VStack {
+            TimesTableText("Questions: \(questionChoices[questionChoice].label)")
+
+            ScrollView {
+                ForEach(selectedTables, id: \.self) { index in
+                    HStack {
+                        TimesTableImage(index: index, color: colors[index % 7], size: 35)
+
+                        Spacer()
+
+                        Text("table[\(index + 1)]")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                            .listRowBackground(Color.clear)
+
+                        Spacer()
+                    }
+                }
+            }
+            .padding(.vertical, 10)
+            .padding(.horizontal, 15)
+            .timesTableGroupBorderStyle()
+        }
     }
 
     var displayStartButton: some View {
         Button {
             gameSetup.toggle()
+            initialiseGame()
+            gameRunning.toggle()
+            // temporary...
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                print("toggle game running")
+                gameRunning.toggle()
+            }
         } label: {
             TimesTableText("Start the game")
         }
-        .disabled(tableSelections.filter { $0 }.map { _ in 1 }.reduce(0, +) == 0)
-        .timesTableGroupBorderStyle()
+        .buttonStyle(TimesTableButtonStyle(.green))
+        .disabled(!isGameReady)
+        .opacity(isGameReady ? 1.0 : 0.5)
     }
 
     var displayRestartButton: some View {
         Button {
+            print("toggle game setup")
             gameSetup.toggle()
         } label: {
             TimesTableText("Start a new game")
         }
-        .timesTableGroupBorderStyle()
+        .buttonStyle(TimesTableButtonStyle(.red))
+        .disabled(gameRunning)
+        .opacity(gameRunning ? 0.5 : 1.0)
+    }
+
+    var selectedTables: [Int] {
+        (0 ..< tableSelections.count).filter {
+            tableSelections[$0]
+        }.reduce([]) {
+            $0 + [$1]
+        }
+    }
+
+    var isGameReady: Bool {
+        selectedTables.count > 0
     }
 
     func initialiseGame() {
         // create questions based on selected times tables and
         // desired number of questions
+        print("initialise game")
     }
 
 }
@@ -156,6 +194,7 @@ struct TimesTableText: View {
             .font(.title)
             .fontWeight(.semibold)
             .foregroundColor(.white)
+            .shadow(color: Color.black, radius: 2)
             .padding(.vertical, 10)
             .padding(.horizontal, 15)
     }
@@ -166,6 +205,13 @@ struct TimesTableToggle: View {
     let color: Color
     @Binding var selected: Bool
     let action: () -> Void
+
+    init(index: Int, color: Color, selected: Binding<Bool>, action: @escaping () -> Void = {}) {
+        self.index = index
+        self.color = color
+        self._selected = selected
+        self.action = action
+    }
 
     var body: some View {
         Toggle(isOn: $selected, label: {
@@ -190,27 +236,37 @@ struct TimesTableToggleStyle: ToggleStyle {
                 Label {
                     configuration.label
                 } icon: {
-                    TimesTableImage(index: index, color: color, isOn: configuration.isOn)
+                    TimesTableImage(index: index, color: color, isWonky: true, isOn: configuration.isOn)
                 }
             }
         )
-        .rotationEffect(.degrees(index % 2 == 0 ? -10 : 10), anchor: .center)
     }
 }
 
 struct TimesTableImage: View {
     let index: Int
     let color: Color
+    let size: CGFloat
+    let isWonky: Bool
     let isOn: Bool
+
+    init(index: Int, color: Color, size: CGFloat = 55, isWonky: Bool = false, isOn: Bool = false) {
+        self.index = index
+        self.color = color
+        self.size = size
+        self.isWonky = isWonky
+        self.isOn = isOn
+    }
 
     var body: some View {
         Image(systemName: "\(index + 1).square.fill")
             .resizable()
-            .timesTableImageBodyStyle(color: color, width: 55, height: 55)
+            .timesTableImageBodyStyle(color: color, width: size, height: size)
             .timesTableImageBorderStyle(isOn: isOn)
             .opacity(isOn ? 0.5 : 1.0)
             .animation(.easeOut)
             .padding(5)
+            .rotationEffect(.degrees(!isWonky ? 0 : index % 2 == 0 ? -10 : 10), anchor: .center)
     }
 }
 
@@ -218,7 +274,7 @@ struct TimesTableGroupBorderStyle: ViewModifier {
     func body(content: Content) -> some View {
         content
             .overlay(
-                RoundedRectangle(cornerRadius: 15)
+                RoundedRectangle(cornerRadius: 10)
                     .strokeBorder(Color.white, lineWidth: 2)
                     .shadow(color: Color.black, radius: 4)
             )
@@ -271,6 +327,21 @@ struct TimesTableImageBorderStyle: ViewModifier {
 extension View {
     func timesTableImageBorderStyle(isOn: Bool) -> some View {
         self.modifier(TimesTableImageBorderStyle(isOn: isOn))
+    }
+}
+
+struct TimesTableButtonStyle: ButtonStyle {
+    let color: Color
+
+    init(_ color: Color) {
+        self.color = color
+    }
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(color)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .timesTableGroupBorderStyle()
     }
 }
 
